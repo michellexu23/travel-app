@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "travel-app",
+    "name": "Frolic",
     "slug": "travel-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "travelapp",
+    "scheme": "frolic",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
