@@ -17,7 +17,7 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
-  const { session, isLoading } = useSession();
+  const { session, profile, isLoading } = useSession();
 
   useEffect(() => {
     if (!isLoading) SplashScreen.hide();
@@ -25,12 +25,18 @@ function RootNavigator() {
 
   if (isLoading) return null;
 
-  // Route guards: signed-in users can only reach (app); signed-out users can
-  // only reach sign-in. When the session changes, Expo Router redirects.
+  // Route guards, one per state. Exactly one guard is true at a time:
+  //   signed out                    -> sign-in
+  //   signed in, no profile yet     -> choose-username
+  //   signed in, has profile        -> (app)
+  // When the state changes, Expo Router redirects automatically.
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={!!session}>
+      <Stack.Protected guard={!!session && !!profile}>
         <Stack.Screen name="(app)" />
+      </Stack.Protected>
+      <Stack.Protected guard={!!session && !profile}>
+        <Stack.Screen name="choose-username" />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />

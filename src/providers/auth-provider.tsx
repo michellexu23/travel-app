@@ -1,39 +1,98 @@
-// Holds the current sign-in session and shares it with every screen via React
-// Context, so any component can call useSession() instead of asking Supabase.
+// Holds the current sign-in session and the user's profile, and shares them
+// with every screen via React Context (useSession()).
 import type { Session } from '@supabase/supabase-js';
-import { createContext, use, useEffect, useState, type PropsWithChildren } from 'react';
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useState,
+  type PropsWithChildren,
+} from 'react';
 
+import type { Database } from '@/lib/database.types';
 import { supabase } from '@/lib/supabase';
+
+export type Profile = Database['public']['Tables']['profiles']['Row'];
 
 type AuthState = {
   session: Session | null;
-  isLoading: boolean; // true until we've read the saved session from the device
+  profile: Profile | null; // null = signed out, or signed in but no username yet
+  isLoading: boolean; // true until we know both the session and the profile
+  refreshProfile: () => Promise<void>; // call after creating/updating the profile
 };
 
-const AuthContext = createContext<AuthState>({ session: null, isLoading: true });
+const AuthContext = createContext<AuthState>({
+  session: null,
+  profile: null,
+  isLoading: true,
+  refreshProfile: async () => {},
+});
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  // Remember WHICH user the profile was loaded for, so a profile fetched for a
+  // previous user (e.g. just before sign-out) can never be shown for a new one.
+  const [loaded, setLoaded] = useState<{ userId: string; profile: Profile | null } | null>(null);
 
+  // 1. Session: load the saved one, then listen for sign-in/sign-out/refresh.
+  //    (Observer pattern: Supabase notifies us; we don't poll.)
   useEffect(() => {
-    // 1. On launch, load any session saved on the device (user stays signed in).
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      setIsLoading(false);
+      setSessionLoaded(true);
     });
-
-    // 2. Then listen for changes: sign-in, sign-out, token refresh.
-    //    This is the observer pattern; Supabase notifies us, we don't poll.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
     });
-
-    // 3. Unsubscribe when the provider unmounts, to avoid a memory leak.
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  return <AuthContext value={{ session, isLoading }}>{children}</AuthContext>;
+  const userId = session?.user.id;
+
+  // 2. Profile: fetch whenever the signed-in user changes. Done in a separate
+  //    effect, not inside onAuthStateChange, because Supabase warns that calling
+  //    other Supabase methods inside that callback can deadlock.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchProfile(userId).then((profile) => {
+      // Ignore the result if the user changed while the request was in flight.
+      if (!cancelled) setLoaded({ userId, profile });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const refreshProfile = useCallback(async () => {
+    if (!userId) return;
+    setLoaded({ userId, profile: await fetchProfile(userId) });
+  }, [userId]);
+
+  // Derived state: no extra flags to keep in sync.
+  const profileIsCurrent = !!userId && loaded?.userId === userId;
+  const profile = profileIsCurrent ? loaded.profile : null;
+  const isLoading = !sessionLoaded || (!!userId && !profileIsCurrent);
+
+  return (
+    <AuthContext value={{ session, profile, isLoading, refreshProfile }}>
+      {children}
+    </AuthContext>
+  );
+}
+
+async function fetchProfile(userId: string): Promise<Profile | null> {
+  // RLS lets any signed-in user read profiles; we filter to our own row.
+  // maybeSingle(): returns null (not an error) when the row doesn't exist yet.
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) console.warn('Failed to load profile:', error.message);
+  return data;
 }
 
 export function useSession() {

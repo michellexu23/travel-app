@@ -42,7 +42,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:types": "supabase gen types typescript --remote > src/lib/database.types.ts"
   },
   "private": true
 }
