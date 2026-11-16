@@ -19,14 +19,16 @@ type AuthState = {
   session: Session | null;
   profile: Profile | null; // null = signed out, or signed in but no username yet
   isLoading: boolean; // true until we know both the session and the profile
-  refreshProfile: () => Promise<void>; // call after creating/updating the profile
+  // Re-fetch after creating/updating the profile. Returns the loaded profile
+  // (null if none exists or the request failed).
+  refreshProfile: () => Promise<Profile | null>;
 };
 
 const AuthContext = createContext<AuthState>({
   session: null,
   profile: null,
   isLoading: true,
-  refreshProfile: async () => {},
+  refreshProfile: async () => null,
 });
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -67,8 +69,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [userId]);
 
   const refreshProfile = useCallback(async () => {
-    if (!userId) return;
-    setLoaded({ userId, profile: await fetchProfile(userId) });
+    if (!userId) return null;
+    const profile = await fetchProfile(userId);
+    setLoaded({ userId, profile });
+    return profile;
   }, [userId]);
 
   // Derived state: no extra flags to keep in sync.

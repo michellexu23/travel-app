@@ -37,6 +37,10 @@ export default function ChooseUsername() {
 
     if (error) {
       if (error.code === '23505') {
+        // A conflict might be with OUR OWN row from an earlier attempt whose
+        // refresh failed. If we now have a profile, treat it as success.
+        const existing = await refreshProfile();
+        if (existing) return;
         setError('Username already taken!');
       } else if (error.code === '23514') {
         setError('Use only lowercase letters, numbers and underscores (3–30 characters).');
